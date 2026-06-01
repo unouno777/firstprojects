@@ -98,7 +98,10 @@ svg.radar{overflow:visible}
 .heatmap-table td:first-child{text-align:left;font-weight:600;background:#f8fafc;min-width:100px}
 .heat-cell{border-radius:8px;padding:6px 4px;font-weight:900;font-size:14px}
 
-/* ── Notification badge ── */
+/* ── SVG Avatar ── */
+.avatar-svg-wrap{border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+@keyframes aura-pulse{0%,100%{opacity:.35}50%{opacity:.65}}
+.aura-ring{animation:aura-pulse 2.4s ease-in-out infinite}
 .badge{background:#ef4444;color:#fff;border-radius:99px;font-size:10px;font-weight:900;padding:1px 6px;margin-left:4px}
 
 /* ── Quest ── */
@@ -264,16 +267,169 @@ function makeRadar(skills, cats, size) {
 // ════════════════════════════════════════════════════════════════
 // AVATAR (emoji-based, 5 tiers)
 // ════════════════════════════════════════════════════════════════
-const AVATARS=[
-  {emoji:'🧑',ring:'#94a3b8',bg:'#f1f5f9'},
-  {emoji:'🧑‍💼',ring:'#10b981',bg:'#f0fdf4'},
-  {emoji:'👔',ring:'#3b82f6',bg:'#eff6ff'},
-  {emoji:'🎩',ring:'#7c3aed',bg:'#f5f3ff'},
-  {emoji:'👑',ring:'#d97706',bg:'#fffbeb'},
-];
-function avatarForTier(tier){
-  const t=RANK_TIERS.findIndex(r=>r.code==='J'+(tier||1));
-  return AVATARS[Math.max(0,Math.min(4,t))];
+// ════════════════════════════════════════════════════════════════
+// SVG AVATAR  — 5段階コスチューム変化
+// tier 1: ポロシャツ+チノパン(新入社員)
+// tier 2: ワイシャツ+スラックス
+// tier 3: スーツ(ネクタイなし)+眼鏡
+// tier 4: スーツ+ネクタイ
+// tier 5: 3ピース+ポケットチーフ+オーラ
+// ════════════════════════════════════════════════════════════════
+function makeSvgAvatar(tier, sizePx) {
+  sizePx = sizePx || 80;
+  const s = 180; // internal viewBox
+  const cx = 90, cy = 90;
+
+  const themes = [
+    // J1 polo
+    {skin:'#FDBCB4',skinD:'#F4A99E',hair:'#2d1a0e',
+     shirt:'#7EB8E8',shirtD:'#5A9FD4',pants:'#C8B99A',pantsD:'#B5A48A',
+     jacket:null,tie:null,vest:null,pocket:null,glasses:false,
+     bg1:'#EFF6FF',bg2:'#DBEAFE'},
+    // J2 shirt+slacks
+    {skin:'#FDBCB4',skinD:'#F4A99E',hair:'#2d1a0e',
+     shirt:'#FFFFFF',shirtD:'#E5E7EB',pants:'#4B5563',pantsD:'#374151',
+     jacket:null,tie:null,vest:null,pocket:null,glasses:false,
+     bg1:'#F0FDF4',bg2:'#DCFCE7'},
+    // J3 suit no tie + glasses
+    {skin:'#FDBCB4',skinD:'#F4A99E',hair:'#1a1a1a',
+     shirt:'#F9FAFB',shirtD:'#E5E7EB',pants:'#1E3A5F',pantsD:'#162D4A',
+     jacket:'#1E3A5F',jacketD:'#162D4A',tie:null,vest:null,pocket:null,glasses:true,
+     bg1:'#EFF6FF',bg2:'#BFDBFE'},
+    // J4 suit + tie
+    {skin:'#FDBCB4',skinD:'#F4A99E',hair:'#111111',
+     shirt:'#FFFFFF',shirtD:'#F3F4F6',pants:'#1C1C2E',pantsD:'#111118',
+     jacket:'#1C1C2E',jacketD:'#111118',tie:'#C0392B',tieD:'#922B21',
+     vest:null,pocket:null,glasses:true,
+     bg1:'#F5F3FF',bg2:'#DDD6FE'},
+    // J5 3-piece + pocket square + silver streak
+    {skin:'#FDBCB4',skinD:'#F4A99E',hair:'#0a0a0a',hairS:'#CBD5E1',
+     shirt:'#FFFBEB',shirtD:'#FEF3C7',pants:'#111827',pantsD:'#0a0f1a',
+     jacket:'#111827',jacketD:'#0a0f1a',tie:'#92400E',tieD:'#6B2D0A',
+     vest:'#1F2937',vestD:'#111827',pocket:'#FCD34D',glasses:true,
+     bg1:'#FFF7ED',bg2:'#FDE68A'},
+  ];
+
+  const t  = themes[Math.min(tier-1, 4)];
+  const hasJ = !!t.jacket;
+  const hasV = !!t.vest;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sizePx}" height="${sizePx}" viewBox="0 0 ${s} ${s}">`;
+  svg += `<defs>
+    <radialGradient id="bg${tier}" cx="50%" cy="60%" r="55%">
+      <stop offset="0%" stop-color="${t.bg1}"/>
+      <stop offset="100%" stop-color="${t.bg2}"/>
+    </radialGradient>
+    <radialGradient id="sk${tier}" cx="45%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="${t.skin}"/>
+      <stop offset="100%" stop-color="${t.skinD}"/>
+    </radialGradient>
+  </defs>`;
+
+  // Background
+  svg += `<circle cx="${cx}" cy="${cy}" r="86" fill="url(#bg${tier})"/>`;
+
+  // J5 aura ring
+  if(tier===5){
+    svg += `<circle class="aura-ring" cx="${cx}" cy="${cy}" r="82" fill="none" stroke="#F59E0B" stroke-width="4" opacity="0.5"/>`;
+  }
+
+  // Legs
+  svg += `<rect x="68" y="120" width="18" height="46" rx="5" fill="${t.pants}"/>`;
+  svg += `<rect x="94" y="120" width="18" height="46" rx="5" fill="${t.pants}"/>`;
+  // Shoes
+  svg += `<ellipse cx="77" cy="168" rx="13" ry="6" fill="#1a1a1a"/>`;
+  svg += `<ellipse cx="103" cy="168" rx="13" ry="6" fill="#1a1a1a"/>`;
+
+  // Shirt torso
+  svg += `<rect x="62" y="82" width="56" height="46" rx="7" fill="${t.shirt}"/>`;
+
+  // Jacket
+  if(hasJ){
+    svg += `<polygon points="62,82 62,128 84,128 88,82" fill="${t.jacket}"/>`;
+    svg += `<polygon points="118,82 118,128 96,128 92,82" fill="${t.jacket}"/>`;
+    svg += `<polygon points="92,82 86,104 90,102" fill="${t.shirtD}" opacity="0.9"/>`;
+    svg += `<polygon points="98,82 104,104 100,102" fill="${t.shirtD}" opacity="0.9"/>`;
+  }
+
+  // Vest
+  if(hasV){
+    svg += `<polygon points="72,84 72,126 84,126 88,84" fill="${t.vest}"/>`;
+    svg += `<polygon points="108,84 108,126 96,126 92,84" fill="${t.vest}"/>`;
+    [0,1,2].forEach(i=>{
+      svg += `<circle cx="90" cy="${98+i*9}" r="2" fill="#374151"/>`;
+    });
+    if(t.pocket){
+      svg += `<polygon points="96,88 108,88 107,96 95,96" fill="${t.pocket}" opacity="0.9"/>`;
+      svg += `<line x1="102" y1="88" x2="102" y2="82" stroke="${t.pocket}" stroke-width="2.5"/>`;
+    }
+  }
+
+  // Tie
+  if(t.tie){
+    svg += `<polygon points="86,82 94,82 96,100 90,122 84,100" fill="${t.tie}"/>`;
+  }
+
+  // Arms
+  svg += `<rect x="42" y="84" width="22" height="36" rx="7" fill="${hasJ?t.jacket:t.shirt}"/>`;
+  svg += `<rect x="116" y="84" width="22" height="36" rx="7" fill="${hasJ?t.jacket:t.shirt}"/>`;
+  svg += `<rect x="42" y="112" width="22" height="8" rx="4" fill="${t.shirt}"/>`;
+  svg += `<rect x="116" y="112" width="22" height="8" rx="4" fill="${t.shirt}"/>`;
+  svg += `<ellipse cx="53" cy="124" rx="9" ry="7" fill="url(#sk${tier})"/>`;
+  svg += `<ellipse cx="127" cy="124" rx="9" ry="7" fill="url(#sk${tier})"/>`;
+
+  // Neck
+  svg += `<rect cx="90" y="70" x="82" width="16" height="16" rx="5" fill="url(#sk${tier})"/>`;
+
+  // Head
+  svg += `<ellipse cx="${cx}" cy="52" rx="27" ry="29" fill="url(#sk${tier})"/>`;
+  svg += `<ellipse cx="63" cy="54" rx="5" ry="8" fill="${t.skinD}"/>`;
+  svg += `<ellipse cx="117" cy="54" rx="5" ry="8" fill="${t.skinD}"/>`;
+
+  // Hair
+  svg += `<ellipse cx="${cx}" cy="28" rx="25" ry="15" fill="${t.hair}"/>`;
+  svg += `<ellipse cx="70" cy="38" rx="12" ry="16" fill="${t.hair}"/>`;
+  svg += `<ellipse cx="110" cy="38" rx="12" ry="16" fill="${t.hair}"/>`;
+  if(t.hairS){
+    svg += `<path d="M 84 20 Q 90 14 96 20" stroke="${t.hairS}" stroke-width="3" fill="none" opacity="0.8"/>`;
+  }
+
+  // Eyes
+  svg += `<ellipse cx="80" cy="52" rx="4" ry="4.5" fill="#fff"/>`;
+  svg += `<ellipse cx="100" cy="52" rx="4" ry="4.5" fill="#fff"/>`;
+  svg += `<circle cx="80" cy="53" r="3" fill="#2d1a0e"/>`;
+  svg += `<circle cx="100" cy="53" r="3" fill="#2d1a0e"/>`;
+  svg += `<circle cx="81" cy="52" r="1" fill="#fff"/>`;
+  svg += `<circle cx="101" cy="52" r="1" fill="#fff"/>`;
+
+  // Eyebrows
+  svg += `<path d="M 74 44 Q 80 41 86 44" stroke="${t.hair}" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+  svg += `<path d="M 94 44 Q 100 41 106 44" stroke="${t.hair}" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+
+  // Nose
+  svg += `<path d="M 87 58 Q 90 62 93 58" stroke="${t.skinD}" stroke-width="1.5" fill="none" stroke-linecap="round"/>`;
+
+  // Smile (bigger at higher tiers)
+  const sw = 4+tier;
+  svg += `<path d="M ${90-sw} 68 Q 90 ${72+tier} ${90+sw} 68" stroke="#8B4513" stroke-width="1.8" fill="none" stroke-linecap="round"/>`;
+
+  // Glasses (tier 3+)
+  if(t.glasses){
+    svg += `<rect x="72" y="49" width="14" height="10" rx="3" fill="none" stroke="#374151" stroke-width="1.8"/>`;
+    svg += `<rect x="94" y="49" width="14" height="10" rx="3" fill="none" stroke="#374151" stroke-width="1.8"/>`;
+    svg += `<line x1="86" y1="54" x2="94" y2="54" stroke="#374151" stroke-width="1.8"/>`;
+  }
+
+  svg += '</svg>';
+  return svg;
+}
+
+// ════════════════════════════════════════════════════════════════
+// RANK → TIER mapping
+// ════════════════════════════════════════════════════════════════
+function tierForEmp(emp) {
+  const rank = getRank(emp.skills);
+  return parseInt(rank.code.replace('J','')) || 1;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -587,9 +743,9 @@ function renderMembers() {
       </div>
       ${emps.map(emp=>{
         const rank=getRank(emp.skills);
-        const av=avatarForTier(RANK_TIERS.findIndex(r=>r.code===rank.code)+1);
+        const tier=parseInt(rank.code.replace('J',''))||1;
         return `<div class="member-row${emp.id===state.selectedEmpId?' selected':''}" onclick="selectMember(${emp.id})">
-          <div class="avatar" style="background:${av.bg};border:2px solid ${av.ring};font-size:24px">${av.emoji}</div>
+          <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;border:2px solid ${rank.color};flex-shrink:0">${makeSvgAvatar(tier, 44)}</div>
           <div style="flex:1;min-width:0">
             <div style="font-weight:700;font-size:14px">${esc(emp.name)}${emp.wsRole==='admin'?'👑':''}</div>
             <div style="font-size:11px;color:#94a3b8">${esc(emp.role)}</div>
@@ -604,14 +760,13 @@ function renderMembers() {
 
 function renderMemberDetail(emp) {
   const rank = getRank(emp.skills);
-  const av   = avatarForTier(RANK_TIERS.findIndex(r=>r.code===rank.code)+1);
+  const tier = parseInt(rank.code.replace('J',''))||1;
   const total= Object.values(emp.skills).reduce((a,b)=>a+b,0);
-  const isMe = emp.id === state.session.employeeId;
 
   return `
   <div class="card">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <div class="avatar" style="width:56px;height:56px;font-size:32px;background:${av.bg};border:2px solid ${av.ring}">${av.emoji}</div>
+      <div style="width:72px;height:72px;border-radius:50%;overflow:hidden;border:2.5px solid ${rank.color};flex-shrink:0;box-shadow:0 4px 16px ${rank.color}40">${makeSvgAvatar(tier, 72)}</div>
       <div style="flex:1">
         <div style="font-size:18px;font-weight:900">${esc(emp.name)}</div>
         <div style="font-size:12px;color:#94a3b8">${esc(emp.role)}</div>
@@ -652,20 +807,38 @@ function renderMyPage() {
   const me   = getMe();
   if(!me) return `<div class="page"><p>ログインしていません</p></div>`;
   const rank = getRank(me.skills);
-  const av   = avatarForTier(RANK_TIERS.findIndex(r=>r.code===rank.code)+1);
+  const tier = parseInt(rank.code.replace('J',''))||1;
   const total= Object.values(me.skills).reduce((a,b)=>a+b,0);
   const logs = (db.logs()[me.id]||[]).slice(0,10);
+
+  // Tier description labels
+  const tierLabels=['新入社員','ジュニアスタッフ','ミドルスタッフ','シニアスタッフ','エグゼクティブ'];
+  const tierDesc = tierLabels[tier-1]||'';
 
   return `<div class="page">
     <div class="hero" style="background:linear-gradient(135deg,${rank.bg},#fff);border:1.5px solid ${rank.color}40">
       <div style="display:flex;gap:14px;align-items:center">
-        <div class="avatar" style="width:64px;height:64px;font-size:36px;background:${av.bg};border:2px solid ${av.ring}">${av.emoji}</div>
+        <div style="width:80px;height:80px;border-radius:50%;overflow:hidden;border:3px solid ${rank.color};flex-shrink:0;box-shadow:0 6px 20px ${rank.color}50">${makeSvgAvatar(tier,80)}</div>
         <div>
           <div class="hero-name">${esc(me.name)}</div>
           <div class="hero-role">${esc(me.role)}</div>
           <div class="hero-rank" style="background:${rank.color};color:#fff">
-            ${rank.code} — ${rank.label}
+            ${rank.code} — ${tierDesc}
           </div>
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;justify-content:space-around;background:rgba(255,255,255,.6);border-radius:12px;padding:10px">
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:900;color:${rank.color}">${total}</div>
+          <div style="font-size:10px;color:#94a3b8">Total</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:900;color:${rank.color}">${Math.max(...Object.values(me.skills))}</div>
+          <div style="font-size:10px;color:#94a3b8">Max Lv</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:900;color:${rank.color}">${(total/SKILLS.length).toFixed(1)}</div>
+          <div style="font-size:10px;color:#94a3b8">Avg</div>
         </div>
       </div>
     </div>
@@ -792,9 +965,11 @@ function renderApprovals() {
       const skill = SKILLS.find(s=>s.id===apv.skillId);
       const meta  = LEVELS[apv.targetLevel-1];
       if(!emp||!quest||!skill) return '';
+      const rank  = getRank(emp.skills);
+      const tier  = parseInt(rank.code.replace('J',''))||1;
       return `<div class="card" style="border-color:#f59e0b40">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-          <div style="font-size:28px">👤</div>
+          <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid ${rank.color}">${makeSvgAvatar(tier,44)}</div>
           <div>
             <div style="font-weight:900">${esc(emp.name)}</div>
             <div style="font-size:12px;color:#94a3b8">${esc(emp.role)}</div>
