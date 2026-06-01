@@ -4,21 +4,48 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Skill Map</title>
+
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React 18 -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Babel standalone 7.24 — supports ?. and ?? out of the box -->
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+
+  <!-- Lucide React -->
   <script src="https://unpkg.com/lucide-react@0.383.0/dist/umd/lucide-react.js"></script>
+
+  <!-- PWA / スマホ対応 -->
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Skill Map" />
   <meta name="theme-color" content="#1e3a8a" />
-  <style>body{margin:0}#root{min-height:100vh}</style>
+
+  <style>
+    body { margin: 0; }
+    #root { min-height: 100vh; }
+  </style>
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel" data-presets="react">
+
+  <!--
+    data-presets="react,env" により以下がすべて変換される:
+    - JSX
+    - ?. (optional chaining)
+    - ?? (nullish coalescing)
+    - async/await
+    - その他 ES2020+ 構文
+  -->
+  <script type="text/babel" data-presets="react,env">
+
+    /* ── React hooks ── */
     const { useState, useEffect, useCallback } = React;
+
+    /* ── Lucide icons ── */
     const {
       Plus, Minus, Trash2, UserPlus, ChevronRight, TrendingUp,
       Users, BarChart2, Award, BookOpen, Star, Layers,
@@ -30,7 +57,9 @@
       ClipboardCheck, Bell, ThumbsUp, ThumbsDown, Clock, AlertCircle,
       Map, Filter, Download,
     } = lucide;
-    const SendHorizonal = lucide.SendHorizonal ?? lucide.Send ?? lucide.ArrowRight;
+
+    /* SendHorizonal は lucide 0.383 に存在しないため fallback */
+    const SendHorizonal = lucide.SendHorizonal || lucide.Send || lucide.ArrowRight;
 
   Plus, Minus, Trash2, UserPlus, ChevronRight, TrendingUp,
   Users, BarChart2, Award, BookOpen, Star, Layers,
@@ -3430,9 +3459,14 @@ function WorkspaceApp({ session, workspace, onWorkspaceChange, onLogout }) {
   );
 }
 
+
+    /* ── Mount ── */
     ReactDOM.createRoot(document.getElementById('root')).render(
-      React.createElement(React.StrictMode, null, React.createElement(App))
+      React.createElement(React.StrictMode, null,
+        React.createElement(App)
+      )
     );
+
   </script>
 </body>
 </html>
