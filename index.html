@@ -1,5 +1,37 @@
-import { useState, useEffect, useCallback } from "react";
-import {
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skill Map</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide-react@0.383.0/dist/umd/lucide-react.js"></script>
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Skill Map" />
+  <meta name="theme-color" content="#1e3a8a" />
+  <style>body{margin:0}#root{min-height:100vh}</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useCallback } = React;
+    const {
+      Plus, Minus, Trash2, UserPlus, ChevronRight, TrendingUp,
+      Users, BarChart2, Award, BookOpen, Star, Layers,
+      ChevronDown, ChevronUp, Shield, UserCheck, LogIn,
+      Lock, Eye, Settings, Crown, Briefcase,
+      Scroll, ArrowUpCircle, ArrowDownCircle, Lightbulb, Flame,
+      Pencil, Check, X, GripVertical, PlusCircle,
+      Swords, Target, Trophy, Zap, ListChecks, ChevronLeft,
+      ClipboardCheck, Bell, ThumbsUp, ThumbsDown, Clock, AlertCircle,
+      Map, Filter, Download,
+    } = lucide;
+    const SendHorizonal = lucide.SendHorizonal ?? lucide.Send ?? lucide.ArrowRight;
+
   Plus, Minus, Trash2, UserPlus, ChevronRight, TrendingUp,
   Users, BarChart2, Award, BookOpen, Star, Layers,
   ChevronDown, ChevronUp, Shield, UserCheck, LogIn,
@@ -2796,7 +2828,7 @@ function AdminDetail({ selected, rank, rc, total, maxSkill, updateSkill, deleteE
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function App() {
+function App() {
   // ── Session & workspace state ──────────────────────────────────────────
   const [session,   setSession]   = useState(() => loadSession());
   const [workspace, setWorkspace] = useState(() => {
@@ -3397,3 +3429,10 @@ function WorkspaceApp({ session, workspace, onWorkspaceChange, onLogout }) {
     </div>
   );
 }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      React.createElement(React.StrictMode, null, React.createElement(App))
+    );
+  </script>
+</body>
+</html>
