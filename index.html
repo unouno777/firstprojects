@@ -470,7 +470,11 @@ window.addEventListener('DOMContentLoaded', ()=>{
   if(hash.startsWith('#invite=')) {
     try {
       const encoded = hash.slice('#invite='.length);
-      const wsSnap  = JSON.parse(atob(encoded));
+      // Reverse of encodeURIComponent-safe btoa
+      const json    = decodeURIComponent(
+        atob(encoded).split('').map(c=>'%'+c.charCodeAt(0).toString(16).padStart(2,'0')).join('')
+      );
+      const wsSnap  = JSON.parse(json);
       if(wsSnap && wsSnap.id && wsSnap.inviteCode) {
         // Merge into localStorage (don't overwrite if newer version exists)
         const existing = db.getWS(wsSnap.id);
@@ -689,17 +693,24 @@ function copyCode(code) {
 
 function copyInviteUrl() {
   const ws = state.ws || getWS();
-  if(!ws) return;
+  if(!ws) { toast('グループ情報が見つかりません'); return; }
   try {
-    const encoded = btoa(JSON.stringify(ws));
+    // btoa() can't handle multibyte (Japanese) chars — encode first
+    const json    = JSON.stringify(ws);
+    const encoded = btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g,
+                    (_,p)=>String.fromCharCode(parseInt(p,16))));
     const url = location.origin + location.pathname + '#invite=' + encoded;
     if(navigator.clipboard) {
-      navigator.clipboard.writeText(url).then(()=>toast('参加用URLをコピーしました！社員に送ってください🔗'));
+      navigator.clipboard.writeText(url)
+        .then(()=>toast('参加用URLをコピーしました！社員に送ってください🔗'))
+        .catch(()=>{ prompt('このURLをコピーして社員に送ってください:', url); });
     } else {
-      // Fallback: show in prompt
       prompt('このURLをコピーして社員に送ってください:', url);
     }
-  } catch(e) { toast('URLの生成に失敗しました'); }
+  } catch(e) {
+    console.error('copyInviteUrl error:', e);
+    toast('URLの生成に失敗しました: ' + e.message);
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
