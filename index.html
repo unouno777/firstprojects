@@ -6,11 +6,11 @@
 <title>キャリアRPG</title>
 <meta name="theme-color" content="#0a0e1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="キャリアRPG">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
+
 
 
 /* ── Reset & Base ── */
@@ -392,14 +392,18 @@ label{
 .stat-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.12em;margin-top:2px}
 
 
+
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="toast"></div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════════
-// 🔥 FIREBASE CONFIG — ここを自分の設定値に書き換えてください
+// 🔥 FIREBASE CONFIG
+// ここを自分のFirebaseプロジェクトの設定値に書き換えてください
 // ════════════════════════════════════════════════════════════════
 const FIREBASE_CONFIG = {
   apiKey:            "AIzaSyAKJqpBZGCiLYA_c26-F24VPbj6UbQK5mQ",
@@ -411,7 +415,7 @@ const FIREBASE_CONFIG = {
 };
 firebase.initializeApp(FIREBASE_CONFIG);
 const firestore = firebase.firestore();
-const fsWS  = (wsId) => firestore.collection('workspaces').doc(wsId);
+const fsWS  = (wsId)        => firestore.collection('workspaces').doc(wsId);
 const fsLog = (wsId, empId) =>
   firestore.collection('logs').doc(wsId).collection('entries').doc(String(empId));
 
@@ -1906,6 +1910,7 @@ function doHardReset() {
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
 
 
 
