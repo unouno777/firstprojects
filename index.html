@@ -568,34 +568,45 @@ function landingContent(view, data) {
   if(view==='created') return `
     <h2 style="margin-bottom:4px">グループを作成しました！🎉</h2>
     <p class="subtitle">${data.wsName}</p>
-    <div class="invite-box">
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">招待コード</div>
-      <div class="invite-code">${data.code}</div>
+
+    <div style="background:#eff6ff;border:1.5px solid #3b82f6;border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:900;color:#1e3a8a;margin-bottom:8px">📱 社員への招待方法（必読）</div>
+      <div style="font-size:12px;color:#1e40af;line-height:1.8">
+        ① 下の <strong>「参加用URLをコピー」</strong> を押す<br>
+        ② LINE・メールで社員に送る<br>
+        ③ 社員がURLを開いて名前を入力するだけ
+      </div>
     </div>
-    <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px;color:#854d0e;line-height:1.6">
-      ⚠️ <strong>重要：</strong>招待コードだけでは別のデバイスから参加できません。<br>
-      下の「参加用URLをコピー」ボタンのリンクを社員に送ってください。
+
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:10px;padding:14px;font-size:15px" onclick="copyInviteUrl('${data.wsId}')">
+      🔗 参加用URLをコピー
+    </button>
+
+    <div style="background:#f8fafc;border-radius:10px;padding:12px;margin-bottom:14px;text-align:center">
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">招待コード（同じデバイスのみ有効）</div>
+      <div class="invite-code" style="font-size:26px">${data.code}</div>
     </div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:8px" onclick="copyInviteUrl()">
-      🔗 参加用URLをコピー（これを社員に送る）
-    </button>
-    <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center;margin-bottom:12px" onclick="copyCode('${data.code}')">
-      📋 コードだけをコピー
-    </button>
+
     <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center;color:#1e3a8a;border-color:#1e3a8a" onclick="enterApp()">
       管理者として入室する →
     </button>`;
 
   if(view==='join') return `
     <button onclick="showLandingView('home')" style="font-size:12px;color:#94a3b8;background:none;margin-bottom:16px">← 戻る</button>
-    <h2>招待コードで参加</h2>
-    <p class="subtitle">管理者からコードを受け取ってください</p>
-    <div class="form-group"><label>招待コード</label>
-      <input id="inv-code" class="input" placeholder="例：INV-A3B4" style="text-transform:uppercase;letter-spacing:.15em;font-family:monospace;font-size:18px"></div>
+    <h2 style="margin-bottom:6px">グループに参加</h2>
+
+    <div style="background:#fef9c3;border:1px solid #fde68a;border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:#854d0e;line-height:1.7">
+      ⚠️ 管理者から <strong>「参加用URL」</strong> が送られてきた場合は、<br>
+      そのURLをタップするだけで自動参加できます。<br>
+      コード入力は<strong>同じデバイス内</strong>でのみ有効です。
+    </div>
+
     <div class="form-group"><label>あなたの名前</label>
       <input id="join-name" class="input" placeholder="例：鈴木 花子"></div>
     <div class="form-group"><label>役職（省略可）</label>
       <input id="join-role" class="input" placeholder="例：エンジニア"></div>
+    <div class="form-group"><label>招待コード</label>
+      <input id="inv-code" class="input" placeholder="例：INV-A3B4" style="text-transform:uppercase;letter-spacing:.15em;font-family:monospace;font-size:18px"></div>
     <div id="join-err" style="color:#dc2626;font-size:12px;margin-bottom:8px"></div>
     <button class="btn btn-green" style="width:100%;justify-content:center" onclick="doJoin()">
       グループに参加する →
@@ -637,7 +648,7 @@ function doCreate() {
   state.ws = ws;
   state.session = {wsId, role:'admin', employeeId:empId};
   db.saveSes(state.session);
-  showLandingView('created', {wsName, code});
+  showLandingView('created', {wsName, code, wsId});
 }
 
 function doJoin() {
@@ -691,25 +702,45 @@ function copyCode(code) {
   else toast(code);
 }
 
-function copyInviteUrl() {
-  const ws = state.ws || getWS();
+function copyInviteUrl(wsId) {
+  // Fetch the freshest version from localStorage
+  const targetId = wsId || (state.ws && state.ws.id);
+  const ws = targetId ? db.getWS(targetId) : (state.ws || getWS());
   if(!ws) { toast('グループ情報が見つかりません'); return; }
+
   try {
-    // btoa() can't handle multibyte (Japanese) chars — encode first
+    // Safe encode: handles Japanese and all Unicode
     const json    = JSON.stringify(ws);
-    const encoded = btoa(encodeURIComponent(json).replace(/%([0-9A-F]{2})/g,
-                    (_,p)=>String.fromCharCode(parseInt(p,16))));
+    const encoded = btoa(encodeURIComponent(json).replace(
+      /%([0-9A-F]{2})/g, (_, p) => String.fromCharCode(parseInt(p, 16))
+    ));
     const url = location.origin + location.pathname + '#invite=' + encoded;
-    if(navigator.clipboard) {
-      navigator.clipboard.writeText(url)
-        .then(()=>toast('参加用URLをコピーしました！社員に送ってください🔗'))
-        .catch(()=>{ prompt('このURLをコピーして社員に送ってください:', url); });
-    } else {
-      prompt('このURLをコピーして社員に送ってください:', url);
-    }
+
+    const doShare = () => {
+      // Use Web Share API if available (native share sheet on iOS/Android)
+      if(navigator.share) {
+        navigator.share({
+          title: 'Skill Map 参加招待',
+          text:  '【' + ws.name + '】に招待します。URLをタップして参加してください。',
+          url,
+        }).catch(()=>{}); // user cancelled = silent
+        return;
+      }
+      // Clipboard fallback
+      if(navigator.clipboard) {
+        navigator.clipboard.writeText(url)
+          .then(()=>toast('参加用URLをコピーしました！LINEやメールで社員に送ってください 🔗'))
+          .catch(()=>{ prompt('このURLをコピーして社員に送ってください:', url); });
+      } else {
+        prompt('このURLをコピーして社員に送ってください:', url);
+      }
+    };
+
+    doShare();
   } catch(e) {
-    console.error('copyInviteUrl error:', e);
-    toast('URLの生成に失敗しました: ' + e.message);
+    console.error('copyInviteUrl:', e);
+    // Last resort: show code only
+    toast('URLの生成に失敗しました。招待コード「' + ws.inviteCode + '」を手動で共有してください');
   }
 }
 
@@ -1175,11 +1206,15 @@ function showInvitePopup() {
   div.id = 'invite-popup';
   div.style.cssText='position:fixed;top:60px;right:12px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:16px;z-index:200;box-shadow:0 8px 32px rgba(0,0,0,.15);min-width:220px';
   div.innerHTML=`
-    <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">招待コード</div>
-    <div style="background:#0f172a;border-radius:10px;padding:12px;text-align:center;font-family:monospace;font-size:22px;font-weight:900;color:#fff;letter-spacing:.2em;margin-bottom:8px">${ws.inviteCode}</div>
-    <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center;margin-bottom:6px" onclick="copyInviteUrl()">🔗 参加用URLをコピー</button>
-    <button class="btn btn-outline btn-sm" style="width:100%;justify-content:center" onclick="copyCode('${ws.inviteCode}')">📋 コードだけコピー</button>
-    <div style="font-size:10px;color:#94a3b8;margin-top:8px;line-height:1.5">URLを社員に送ると、別デバイスからも参加できます</div>`;
+    <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">社員を招待</div>
+    <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center;margin-bottom:8px;padding:12px" onclick="copyInviteUrl()">
+      🔗 参加用URLを送る
+    </button>
+    <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center;margin-bottom:6px">
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:2px">招待コード（同デバイスのみ）</div>
+      <div style="font-family:monospace;font-size:18px;font-weight:900;letter-spacing:.15em;color:#1e293b">${ws.inviteCode}</div>
+    </div>
+    <div style="font-size:10px;color:#94a3b8;line-height:1.5">「参加用URLを送る」を押すと<br>LINEなどで直接共有できます</div>`;
   document.body.appendChild(div);
   setTimeout(()=>document.addEventListener('click',function h(e){if(!div.contains(e.target)&&e.target.textContent!=='招待'){div.remove();document.removeEventListener('click',h)}},{once:true}),100);
 }
