@@ -1722,22 +1722,49 @@ function getCriteria() {
   return (ws && ws.criteria) ? ws.criteria : CRITERIA_DEFAULT;
 }
 
+/**
+ * 表示用スキル定義を取得。
+ * workspace.skillDefs があればそちらの label/short を優先。
+ * id と color は不変（スキルレベルデータとの紐付けキーのため）。
+ */
+function getSkills() {
+  const ws = getWS();
+  if(!ws || !ws.skillDefs) return SKILLS;
+  return SKILLS.map(s => {
+    const override = ws.skillDefs[s.id];
+    if(!override) return s;
+    return { ...s, label: override.label || s.label, short: override.short || s.short };
+  });
+}
+
 /** Firestoreに criteria を保存（ギルドマスターのみ） */
 async function saveCriteria(newCriteria) {
   if(!isAdmin()) return;
   const ws = getWS();
   if(!ws) return;
   ws.criteria = newCriteria;
-  await db.saveOneWS(ws);   // onSnapshot が他端末に即反映
+  await db.saveOneWS(ws);
   toast('業務図鑑を保存しました ✅');
 }
 
-/** 編集中の状態管理（メモリのみ — DOMに持たせる） */
-let _criteriaEditKey = null;   // "skillId-lvIndex" or null
+/** Firestoreに skillDefs（見出し・略称）を保存（ギルドマスターのみ） */
+async function saveSkillDefs(newDefs) {
+  if(!isAdmin()) return;
+  const ws = getWS();
+  if(!ws) return;
+  ws.skillDefs = newDefs;
+  await db.saveOneWS(ws);
+  toast('スキル名を保存しました ✅');
+}
+
+/** 編集中の状態管理（メモリのみ） */
+let _criteriaEditKey  = null;   // "skillId-lvIndex" or null
+let _skillEditId      = null;   // skillId or null
 
 function renderCriteria() {
   const admin    = isAdmin();
   const criteria = getCriteria();
+  const skills   = getSkills();   // 上書き済みのスキル定義を使う
 
   return `<div class="page">
     ${admin ? `
@@ -1745,7 +1772,7 @@ function renderCriteria() {
       background:rgba(56,189,248,.08);border:1px solid var(--border2);border-radius:10px">
       <span style="font-size:14px">✏️</span>
       <span style="font-size:11px;color:var(--cyan2);font-weight:700">
-        ギルドマスター専用：各レベルの説明文を編集できます
+        ギルドマスター専用：見出し・略称・説明文を編集できます
       </span>
     </div>` : `
     <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:12px;
@@ -1754,22 +1781,61 @@ function renderCriteria() {
       <span style="font-size:11px;color:var(--text3)">閲覧のみ — 編集はギルドマスターが行います</span>
     </div>`}
 
-    ${SKILLS.map(s => {
-      const descs = criteria[s.id] || CRITERIA_DEFAULT[s.id] || [];
+    ${skills.map(s => {
+      const descs      = criteria[s.id] || CRITERIA_DEFAULT[s.id] || [];
+      const isEditHead = admin && _skillEditId === s.id;
+
       return `
       <div class="card" style="margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-          <span style="font-weight:900;font-size:12px;background:${s.color};color:#fff;
-            padding:3px 10px;border-radius:99px">${s.short}</span>
-          <span style="font-weight:700;font-size:14px;color:var(--text)">${s.label}</span>
+
+        <!-- ── スキル見出し ── -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          ${isEditHead ? `
+            <!-- 見出し編集フォーム -->
+            <div style="display:flex;gap:8px;align-items:center;flex:1;flex-wrap:wrap">
+              <input id="skill-short-${s.id}" value="${esc(s.short)}" maxlength="5"
+                placeholder="略称"
+                style="width:64px;background:var(--bg);border:1px solid var(--cyan);
+                  border-radius:6px;padding:5px 8px;color:var(--gold);font-size:13px;
+                  font-weight:900;font-family:var(--font-display);text-align:center">
+              <input id="skill-label-${s.id}" value="${esc(s.label)}" maxlength="20"
+                placeholder="スキル名"
+                style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--cyan);
+                  border-radius:6px;padding:5px 10px;color:var(--text);font-size:14px;font-weight:700">
+            </div>
+            <div style="display:flex;gap:6px;margin-left:auto">
+              <button onclick="commitSkillEdit('${s.id}')"
+                style="padding:5px 14px;background:var(--cyan);color:#0a0e1a;border:none;
+                  border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">✅ 保存</button>
+              <button onclick="cancelSkillEdit()"
+                style="padding:5px 10px;background:var(--surface2);color:var(--text2);
+                  border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer">✕</button>
+            </div>
+          ` : `
+            <!-- 通常表示 -->
+            <span style="font-weight:900;font-size:12px;background:${s.color};color:#fff;
+              padding:3px 10px;border-radius:99px">${esc(s.short)}</span>
+            <span style="font-weight:700;font-size:14px;color:var(--text)">${esc(s.label)}</span>
+            ${admin ? `
+            <button onclick="startSkillEdit('${s.id}')" title="スキル名を編集"
+              style="margin-left:auto;background:none;border:1px solid var(--border);
+                border-radius:6px;padding:3px 9px;color:var(--text3);font-size:11px;
+                cursor:pointer;transition:.15s"
+              onmouseover="this.style.borderColor='var(--cyan)';this.style.color='var(--cyan)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+              ✏️ 名称編集
+            </button>` : ''}
+          `}
         </div>
+
+        <!-- ── レベル説明文 ── -->
         ${descs.map((desc, i) => {
-          const meta   = LEVELS[i];
-          const editKey = `${s.id}-${i}`;
-          const isEditing = _criteriaEditKey === editKey;
+          const meta     = LEVELS[i];
+          const editKey  = `${s.id}-${i}`;
+          const isEditing = admin && _criteriaEditKey === editKey;
           return `
-          <div style="display:flex;gap:10px;padding:10px 0;
-            border-bottom:1px solid var(--border);" id="crit-row-${editKey}">
+          <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);"
+            id="crit-row-${editKey}">
             <div style="flex-shrink:0;text-align:center;width:46px">
               <div style="font-size:18px">${meta.icon}</div>
               <div style="font-size:10px;font-weight:900;color:${meta.color};
@@ -1777,7 +1843,7 @@ function renderCriteria() {
               <div style="font-size:9px;color:${meta.color};line-height:1.2">${meta.name}</div>
             </div>
             <div style="flex:1;min-width:0">
-              ${isEditing && admin ? `
+              ${isEditing ? `
                 <textarea id="crit-input-${editKey}"
                   style="width:100%;background:var(--bg);border:1px solid var(--cyan);
                     border-radius:8px;padding:8px 10px;color:var(--text);font-size:12px;
@@ -1802,7 +1868,7 @@ function renderCriteria() {
                   </div>
                   ${admin ? `
                   <button onclick="startCriteriaEdit('${s.id}',${i})"
-                    title="編集"
+                    title="説明文を編集"
                     style="flex-shrink:0;background:none;border:1px solid var(--border);
                       border-radius:6px;padding:4px 8px;color:var(--text3);font-size:11px;
                       cursor:pointer;transition:.15s;margin-top:2px"
@@ -1818,6 +1884,43 @@ function renderCriteria() {
       </div>`;
     }).join('')}
   </div>`;
+}
+
+/** ── スキル見出し編集（ギルドマスターのみ） ── */
+function startSkillEdit(skillId) {
+  if(!isAdmin()) return;
+  _criteriaEditKey = null;   // 説明文編集は閉じる
+  _skillEditId     = skillId;
+  renderTabContent();
+  setTimeout(() => {
+    const inp = document.getElementById(`skill-label-${skillId}`);
+    if(inp) { inp.focus(); inp.select(); }
+  }, 50);
+}
+
+function cancelSkillEdit() {
+  _skillEditId = null;
+  renderTabContent();
+}
+
+async function commitSkillEdit(skillId) {
+  if(!isAdmin()) return;
+  const labelEl = document.getElementById(`skill-label-${skillId}`);
+  const shortEl = document.getElementById(`skill-short-${skillId}`);
+  if(!labelEl || !shortEl) return;
+
+  const newLabel = labelEl.value.trim();
+  const newShort = shortEl.value.trim().toUpperCase();
+  if(!newLabel) { toast('スキル名を入力してください'); return; }
+  if(!newShort) { toast('略称を入力してください'); return; }
+
+  // workspace.skillDefs に保存（id と color はそのまま — レベルデータのキーを壊さない）
+  const ws = getWS();
+  if(!ws) return;
+  const defs     = { ...(ws.skillDefs || {}) };
+  defs[skillId]  = { label: newLabel, short: newShort };
+  _skillEditId   = null;
+  await saveSkillDefs(defs);
 }
 
 /** ✏️ 編集開始 — ギルドマスターのみ */
