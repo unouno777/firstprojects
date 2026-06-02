@@ -860,46 +860,151 @@ function copyCode(code) {
 }
 
 function copyInviteUrl(wsId) {
-  // Fetch the freshest version from localStorage
   const targetId = wsId || (state.ws && state.ws.id);
-  const ws = targetId ? db.getWS(targetId) : (state.ws || getWS());
-  if(!ws) { toast('グループ情報が見つかりません'); return; }
+  const ws = targetId ? (db._wsCache && db._wsCache[targetId]) || state.ws : state.ws;
+  if(!ws) { showUrlModal(null, null); return; }
 
   try {
-    // Safe encode: handles Japanese and all Unicode
     const json    = JSON.stringify(ws);
     const encoded = btoa(encodeURIComponent(json).replace(
       /%([0-9A-F]{2})/g, (_, p) => String.fromCharCode(parseInt(p, 16))
     ));
     const url = location.origin + location.pathname + '#invite=' + encoded;
-
-    const doShare = () => {
-      // Use Web Share API if available (native share sheet on iOS/Android)
-      if(navigator.share) {
-        navigator.share({
-          title: 'Skill Map 参加招待',
-          text:  '【' + ws.name + '】に招待します。URLをタップして参加してください。',
-          url,
-        }).catch(()=>{}); // user cancelled = silent
-        return;
-      }
-      // Clipboard fallback
-      if(navigator.clipboard) {
-        navigator.clipboard.writeText(url)
-          .then(()=>toast('参加用URLをコピーしました！LINEやメールで社員に送ってください 🔗'))
-          .catch(()=>{ prompt('このURLをコピーして社員に送ってください:', url); });
-      } else {
-        prompt('このURLをコピーして社員に送ってください:', url);
-      }
-    };
-
-    doShare();
+    showUrlModal(url, ws.name);
   } catch(e) {
     console.error('copyInviteUrl:', e);
-    // Last resort: show code only
-    toast('URLの生成に失敗しました。招待コード「' + ws.inviteCode + '」を手動で共有してください');
+    showUrlModal(null, null);
   }
 }
+
+function showUrlModal(url, wsName) {
+  // Remove existing modal if any
+  const old = document.getElementById('url-modal');
+  if(old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'url-modal';
+  modal.style.cssText = [
+    'position:fixed','inset:0','z-index:9000',
+    'background:rgba(0,0,0,.55)','display:flex',
+    'align-items:flex-end','justify-content:center',
+    'padding:0 0 env(safe-area-inset-bottom,0) 0',
+  ].join(';');
+
+  if(!url) {
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:480px">
+        <div style="font-size:16px;font-weight:900;margin-bottom:8px">⚠️ URL生成に失敗しました</div>
+        <p style="font-size:13px;color:#64748b;margin-bottom:16px">グループ情報の読み込み中かもしれません。少し待ってから再度お試しください。</p>
+        <button onclick="document.getElementById('url-modal').remove()"
+          style="width:100%;padding:14px;background:#1e3a8a;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700">閉じる</button>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if(e.target===modal) modal.remove(); });
+    return;
+  }
+
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:480px;box-sizing:border-box">
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="font-size:18px;font-weight:900;color:#1e293b">🔗 参加用URL</div>
+        <div style="font-size:12px;color:#64748b;margin-top:4px">${wsName ? esc(wsName)+'への招待' : '招待リンク'}</div>
+      </div>
+
+      <!-- URL表示エリア：長押しコピー用 -->
+      <div style="background:#f1f5f9;border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:14px;word-break:break-all;font-size:12px;color:#1e40af;line-height:1.6;user-select:all;-webkit-user-select:all"
+           id="invite-url-text">${url}</div>
+
+      <p style="font-size:11px;color:#94a3b8;text-align:center;margin-bottom:14px">
+        ↑ URLを長押し→「コピー」で手動コピーできます
+      </p>
+
+      <!-- ボタン群 -->
+      <div style="display:flex;flex-direction:column;gap:8px">
+
+        <!-- ① iOSネイティブ共有シート（最も確実） -->
+        <button id="btn-share" onclick="doNativeShare('${url.replace(/'/g,"\\'")}','${wsName ? wsName.replace(/'/g,"\\'") : ''}')"
+          style="width:100%;padding:14px;background:linear-gradient(90deg,#1e3a8a,#3b82f6);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700">
+          📤 LINEやメールで送る（共有）
+        </button>
+
+        <!-- ② クリップボードコピー -->
+        <button id="btn-copy" onclick="doClipboardCopy()"
+          style="width:100%;padding:12px;background:#f8fafc;color:#1e3a8a;border:1.5px solid #1e3a8a;border-radius:12px;font-size:14px;font-weight:700">
+          📋 クリップボードにコピー
+        </button>
+
+        <button onclick="document.getElementById('url-modal').remove()"
+          style="width:100%;padding:10px;background:none;color:#94a3b8;border:none;font-size:13px">
+          閉じる
+        </button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) modal.remove(); });
+
+  // ── 共有ボタン：navigator.share が使えない環境では非表示 ──
+  if(!navigator.share) {
+    const btn = document.getElementById('btn-share');
+    if(btn) btn.style.display = 'none';
+  }
+
+  // ── クリップボードコピー関数（モーダル内から呼ぶ） ──
+  window.doClipboardCopy = function() {
+    const urlText = document.getElementById('invite-url-text');
+    if(!urlText) return;
+    const text = urlText.textContent;
+
+    // 方法①: Clipboard API（https必須・ユーザー操作直後なら許可される）
+    if(navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          const btn = document.getElementById('btn-copy');
+          if(btn) { btn.textContent='✅ コピーしました！'; btn.style.background='#dcfce7'; btn.style.color='#16a34a'; btn.style.borderColor='#16a34a'; }
+          setTimeout(()=>{ if(document.getElementById('url-modal')) {
+            const b=document.getElementById('btn-copy'); if(b){b.textContent='📋 クリップボードにコピー';b.style.background='#f8fafc';b.style.color='#1e3a8a';b.style.borderColor='#1e3a8a';}
+          }}, 2500);
+        })
+        .catch(() => fallbackCopy(text));
+    } else {
+      fallbackCopy(text);
+    }
+  };
+
+  // 方法②: 旧来の execCommand（Safari 古いバージョン向け）
+  window.fallbackCopy = function(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0;width:1px;height:1px';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try {
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      const btn = document.getElementById('btn-copy');
+      if(ok && btn) {
+        btn.textContent='✅ コピーしました！'; btn.style.background='#dcfce7'; btn.style.color='#16a34a'; btn.style.borderColor='#16a34a';
+      } else {
+        // 全手段失敗 → 長押しを促す
+        alert('自動コピーができませんでした。\n上のURLを長押しして「コピー」を選んでください。');
+      }
+    } catch(e) {
+      document.body.removeChild(ta);
+      alert('自動コピーができませんでした。\n上のURLを長押しして「コピー」を選んでください。');
+    }
+  };
+}
+
+// ネイティブ共有シート（iOS/Android）
+window.doNativeShare = function(url, wsName) {
+  if(!navigator.share) return;
+  navigator.share({
+    title: 'Skill Map 参加招待',
+    text:  (wsName ? '【'+wsName+'】' : '') + 'に招待します。URLをタップして参加してください。',
+    url,
+  }).catch(()=>{}); // キャンセルは無視
+};
 
 // ════════════════════════════════════════════════════════════════
 // APP SHELL
