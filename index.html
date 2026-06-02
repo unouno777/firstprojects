@@ -1703,7 +1703,11 @@ function renderHeatmap() {
 // ════════════════════════════════════════════════════════════════
 // CRITERIA
 // ════════════════════════════════════════════════════════════════
-const CRITERIA_DATA = {
+// ════════════════════════════════════════════════════════════════
+// CRITERIA (業務図鑑) — デフォルト値
+// Firestoreの workspace.criteria に保存されていればそちらを優先
+// ════════════════════════════════════════════════════════════════
+const CRITERIA_DEFAULT = {
   fe:  ['既存テンプレートを参考に簡単なページ修正ができる','シンプルな実装をサポートのもとで対応できる','画面仕様書をもとに新規ページを一人で実装できる','パフォーマンス最適化・アクセシビリティを意識した実装ができる','フロントエンド全体のアーキテクチャ設計を主導できる'],
   be:  ['既存コードを読んで簡単なバグ修正ができる','ドキュメントを参照しながらAPIのエンドポイント追加ができる','新機能のAPI設計・実装を一人で完結できる','スケーラビリティを考慮したシステム設計ができる','大規模アーキテクチャを設計・推進できる'],
   mgt: ['自分のタスクを期限内にこなすことに集中している','後輩1〜2名のOJT担当として業務指導ができる','小規模チームのリーダーとして自律的に進捗管理ができる','複数チームをまたいだマネジメントができる','部門・事業単位のビジョン策定と育成戦略を担える'],
@@ -1712,27 +1716,144 @@ const CRITERIA_DATA = {
   dat: ['ExcelやSQLを使った基本的なデータ集計ができる','BIツールを使ったダッシュボード作成ができる','仮説を設定しデータ分析から改善提案まで自律的に行える','統計的手法を活用した予測モデルを構築できる','データ戦略の全社方針を策定できる'],
 };
 
+/** workspace.criteria を取得（なければデフォルト値） */
+function getCriteria() {
+  const ws = getWS();
+  return (ws && ws.criteria) ? ws.criteria : CRITERIA_DEFAULT;
+}
+
+/** Firestoreに criteria を保存（ギルドマスターのみ） */
+async function saveCriteria(newCriteria) {
+  if(!isAdmin()) return;
+  const ws = getWS();
+  if(!ws) return;
+  ws.criteria = newCriteria;
+  await db.saveOneWS(ws);   // onSnapshot が他端末に即反映
+  toast('業務図鑑を保存しました ✅');
+}
+
+/** 編集中の状態管理（メモリのみ — DOMに持たせる） */
+let _criteriaEditKey = null;   // "skillId-lvIndex" or null
+
 function renderCriteria() {
+  const admin    = isAdmin();
+  const criteria = getCriteria();
+
   return `<div class="page">
-    ${SKILLS.map(s=>`
-      <div class="card">
+    ${admin ? `
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;margin-bottom:12px;
+      background:rgba(56,189,248,.08);border:1px solid var(--border2);border-radius:10px">
+      <span style="font-size:14px">✏️</span>
+      <span style="font-size:11px;color:var(--cyan2);font-weight:700">
+        ギルドマスター専用：各レベルの説明文を編集できます
+      </span>
+    </div>` : `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:12px;
+      background:var(--surface);border:1px solid var(--border);border-radius:10px">
+      <span style="font-size:12px">👁</span>
+      <span style="font-size:11px;color:var(--text3)">閲覧のみ — 編集はギルドマスターが行います</span>
+    </div>`}
+
+    ${SKILLS.map(s => {
+      const descs = criteria[s.id] || CRITERIA_DEFAULT[s.id] || [];
+      return `
+      <div class="card" style="margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-          <span style="font-weight:900;font-size:12px;background:${s.color};color:#fff;padding:3px 10px;border-radius:99px">${s.short}</span>
-          <span style="font-weight:700;font-size:14px">${s.label}</span>
+          <span style="font-weight:900;font-size:12px;background:${s.color};color:#fff;
+            padding:3px 10px;border-radius:99px">${s.short}</span>
+          <span style="font-weight:700;font-size:14px;color:var(--text)">${s.label}</span>
         </div>
-        ${(CRITERIA_DATA[s.id]||[]).map((desc,i)=>{
-          const meta=LEVELS[i];
-          return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9">
-            <div style="flex-shrink:0;text-align:center;width:44px">
-              <div style="font-size:16px">${meta.icon}</div>
-              <div style="font-size:10px;font-weight:900;color:${meta.color}">Lv.${meta.lv}</div>
-              <div style="font-size:9px;color:${meta.color}">${meta.name}</div>
+        ${descs.map((desc, i) => {
+          const meta   = LEVELS[i];
+          const editKey = `${s.id}-${i}`;
+          const isEditing = _criteriaEditKey === editKey;
+          return `
+          <div style="display:flex;gap:10px;padding:10px 0;
+            border-bottom:1px solid var(--border);" id="crit-row-${editKey}">
+            <div style="flex-shrink:0;text-align:center;width:46px">
+              <div style="font-size:18px">${meta.icon}</div>
+              <div style="font-size:10px;font-weight:900;color:${meta.color};
+                font-family:var(--font-display)">Lv.${meta.lv}</div>
+              <div style="font-size:9px;color:${meta.color};line-height:1.2">${meta.name}</div>
             </div>
-            <div style="font-size:12px;color:#374151;line-height:1.6;flex:1">${esc(desc)}</div>
+            <div style="flex:1;min-width:0">
+              ${isEditing && admin ? `
+                <textarea id="crit-input-${editKey}"
+                  style="width:100%;background:var(--bg);border:1px solid var(--cyan);
+                    border-radius:8px;padding:8px 10px;color:var(--text);font-size:12px;
+                    line-height:1.6;resize:vertical;min-height:64px;font-family:var(--font-body)"
+                  rows="3">${esc(desc)}</textarea>
+                <div style="display:flex;gap:6px;margin-top:6px">
+                  <button onclick="commitCriteriaEdit('${s.id}',${i})"
+                    style="padding:5px 14px;background:var(--cyan);color:#0a0e1a;
+                      border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">
+                    ✅ 保存
+                  </button>
+                  <button onclick="cancelCriteriaEdit()"
+                    style="padding:5px 12px;background:var(--surface2);color:var(--text2);
+                      border:1px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer">
+                    キャンセル
+                  </button>
+                </div>
+              ` : `
+                <div style="display:flex;align-items:flex-start;gap:6px">
+                  <div style="font-size:12px;color:var(--text2);line-height:1.7;flex:1">
+                    ${esc(desc)}
+                  </div>
+                  ${admin ? `
+                  <button onclick="startCriteriaEdit('${s.id}',${i})"
+                    title="編集"
+                    style="flex-shrink:0;background:none;border:1px solid var(--border);
+                      border-radius:6px;padding:4px 8px;color:var(--text3);font-size:11px;
+                      cursor:pointer;transition:.15s;margin-top:2px"
+                    onmouseover="this.style.borderColor='var(--cyan)';this.style.color='var(--cyan)'"
+                    onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">
+                    ✏️
+                  </button>` : ''}
+                </div>
+              `}
+            </div>
           </div>`;
         }).join('')}
-      </div>`).join('')}
+      </div>`;
+    }).join('')}
   </div>`;
+}
+
+/** ✏️ 編集開始 — ギルドマスターのみ */
+function startCriteriaEdit(skillId, lvIndex) {
+  if(!isAdmin()) return;
+  _criteriaEditKey = `${skillId}-${lvIndex}`;
+  renderTabContent();
+  // フォーカスを textarea に移す
+  setTimeout(() => {
+    const ta = document.getElementById(`crit-input-${_criteriaEditKey}`);
+    if(ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }, 50);
+}
+
+/** キャンセル */
+function cancelCriteriaEdit() {
+  _criteriaEditKey = null;
+  renderTabContent();
+}
+
+/** 保存確定 — Firestoreに書き込む */
+async function commitCriteriaEdit(skillId, lvIndex) {
+  if(!isAdmin()) return;
+  const key = `${skillId}-${lvIndex}`;
+  const ta  = document.getElementById(`crit-input-${key}`);
+  if(!ta) return;
+  const newText = ta.value.trim();
+  if(!newText) { toast('説明文を入力してください'); return; }
+
+  // criteria のコピーを作って該当箇所だけ更新
+  const criteria = JSON.parse(JSON.stringify(getCriteria()));
+  if(!criteria[skillId]) criteria[skillId] = [...(CRITERIA_DEFAULT[skillId] || [])];
+  criteria[skillId][lvIndex] = newText;
+
+  _criteriaEditKey = null;
+  await saveCriteria(criteria);   // Firestoreへ保存 → onSnapshot で全端末に反映
 }
 
 // ════════════════════════════════════════════════════════════════
