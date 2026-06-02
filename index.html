@@ -7,6 +7,36 @@
 <meta name="theme-color" content="#1e3a8a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Skill Map">
+
+<!-- Firebase SDK (modular v10 compat build — no bundler needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// 🔥 FIREBASE CONFIG
+// ここに Firebase コンソールからコピーした設定を貼り付けてください
+// ════════════════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyAKJqpBZGCiLYA_c26-F24VPbj6UbQK5mQ",
+  authDomain:        "my-first-project-b8e27.firebaseapp.com",
+  projectId:         "my-first-project-b8e27",
+  storageBucket:     "my-first-project-b8e27.firebasestorage.app",
+  messagingSenderId: "627870773209",
+  appId:             "1:627870773209:web:a263e19b603ce22bb973c8",
+};
+
+// Firebase初期化
+firebase.initializeApp(FIREBASE_CONFIG);
+const firestore = firebase.firestore();
+
+// ── Firestore helpers ──────────────────────────────────────────
+// workspaces コレクション: /workspaces/{wsId}
+// logs コレクション:       /logs/{wsId}/entries/{empId}
+const fsWS  = (wsId) => firestore.collection('workspaces').doc(wsId);
+const fsLog = (wsId, empId) =>
+  firestore.collection('logs').doc(wsId).collection('entries').doc(String(empId));
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f8fafc;color:#1e293b;min-height:100vh}
@@ -119,29 +149,103 @@ svg.radar{overflow:visible}
 
 <script>
 // ════════════════════════════════════════════════════════════════
-// STORAGE
+// STORAGE  — Firestore がメイン / LocalStorage はセッションのみ
 // ════════════════════════════════════════════════════════════════
-const WS_KEY  = 'sm_workspaces';
-const SES_KEY = 'sm_session';
-const LOG_KEY = 'sm_logs';
+const SES_KEY = 'sm_session';   // LocalStorageに残す（ログイン状態のみ）
 
 const db = {
-  workspaces: () => { try{return JSON.parse(localStorage.getItem(WS_KEY)||'{}')}catch{return{}} },
+  // ── セッション（LocalStorage） ────────────────────────────────
   session:    () => { try{return JSON.parse(localStorage.getItem(SES_KEY)||'null')}catch{return null} },
-  logs:       () => { try{return JSON.parse(localStorage.getItem(LOG_KEY)||'{}')}catch{return{}} },
-  saveWS:   (ws) => localStorage.setItem(WS_KEY, JSON.stringify(ws)),
   saveSes:  (s)  => localStorage.setItem(SES_KEY, JSON.stringify(s)),
   clearSes: ()   => localStorage.removeItem(SES_KEY),
-  hardReset:()   => [WS_KEY,SES_KEY,LOG_KEY].forEach(k=>localStorage.removeItem(k)),
-  getWS: (id) => db.workspaces()[id] || null,
-  saveOneWS: (ws) => { const all=db.workspaces(); all[ws.id]=ws; db.saveWS(all); },
-  appendLog: (empId, entry) => {
-    const all=db.logs(); 
-    const prev=all[empId]||[];
-    all[empId]=[entry,...prev].slice(0,50);
-    localStorage.setItem(LOG_KEY,JSON.stringify(all));
+  hardReset:()   => { localStorage.removeItem(SES_KEY); },
+
+  // ── ワークスペース（Firestore） ────────────────────────────────
+  // 書き込み: wsオブジェクト全体をFirestoreに保存
+  saveOneWS: async (ws) => {
+    try {
+      await fsWS(ws.id).set(ws);
+    } catch(e) {
+      console.error('saveOneWS failed:', e);
+      toast('保存に失敗しました。通信環境を確認してください。');
+    }
+  },
+
+  // ── アクティビティログ（Firestore） ───────────────────────────
+  appendLog: async (wsId, empId, entry) => {
+    try {
+      const ref  = fsLog(wsId, empId);
+      const snap = await ref.get();
+      const prev = snap.exists ? (snap.data().entries || []) : [];
+      const next = [entry, ...prev].slice(0, 50);
+      await ref.set({ entries: next });
+    } catch(e) {
+      console.error('appendLog failed:', e);
+    }
+  },
+
+  // ── ログ読み込み（Firestore） ─────────────────────────────────
+  getLogs: async (wsId, empId) => {
+    try {
+      const snap = await fsLog(wsId, empId).get();
+      return snap.exists ? (snap.data().entries || []) : [];
+    } catch(e) { return []; }
   },
 };
+
+// ── リアルタイムリスナー管理 ───────────────────────────────────
+let _unsubscribeWS = null;  // Firestore onSnapshot の解除関数
+
+function subscribeWorkspace(wsId) {
+  // 既存リスナーを解除
+  if(_unsubscribeWS) { _unsubscribeWS(); _unsubscribeWS = null; }
+
+  _unsubscribeWS = fsWS(wsId).onSnapshot((snap) => {
+    if(!snap.exists) return;
+    const fresh = snap.data();
+
+    // state.ws を最新データで更新
+    state.ws = fresh;
+
+    // セッションのwsRoleも同期
+    if(state.session) {
+      const me = (fresh.employees||[]).find(e=>e.id===state.session.employeeId);
+      if(me) {
+        const newRole = me.wsRole==='admin' ? 'admin' : 'employee';
+        if(state.session.role !== newRole) {
+          state.session.role = newRole;
+          db.saveSes(state.session);
+        }
+      }
+    }
+
+    // 画面を再描画（アプリ起動中のみ）
+    if(state.screen === 'app') {
+      // タブコンテンツのみ再描画（ヘッダー等のちらつきを防ぐ）
+      const el = document.getElementById('tab-content');
+      if(el) {
+        renderTabContent();
+      } else {
+        renderApp();
+      }
+      // 承認バッジのカウントも更新
+      updatePendingBadge();
+    }
+  }, (err) => {
+    console.error('onSnapshot error:', err);
+  });
+}
+
+function updatePendingBadge() {
+  const ws = getWS();
+  if(!ws || !isAdmin()) return;
+  const count = (ws.approvals||[]).filter(a=>a.status==='pending').length;
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    if(btn.textContent.includes('承認')) {
+      btn.innerHTML = '承認管理' + (count > 0 ? `<span class="badge">${count}</span>` : '');
+    }
+  });
+}
 
 // ════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -445,15 +549,17 @@ let state = {
 
 function getWS()   { return state.ws; }
 function getEmps() { return state.ws ? state.ws.employees : []; }
-function isAdmin() { 
+function isAdmin() {
   if(!state.session || !state.ws) return false;
   const me = getEmps().find(e=>e.id===state.session.employeeId);
   return me ? me.wsRole==='admin' : false;
 }
 function getMe()   { return getEmps().find(e=>e.id===state.session.employeeId); }
 
+// Firestoreに書き込む（全ての変更はここを通す）
 function saveWS() {
   if(state.ws) { db.saveOneWS(state.ws); }
+  // onSnapshot が変更を検知して自動再描画するので、ここでは rerender() 不要
 }
 
 function rerender() {
@@ -464,57 +570,70 @@ function rerender() {
 // ════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════
-window.addEventListener('DOMContentLoaded', ()=>{
-  // ── Check for invite URL (hash contains base64-encoded ws snapshot) ──────
+window.addEventListener('DOMContentLoaded', async ()=>{
+  // ── Check for invite URL ──────────────────────────────────────
   const hash = location.hash;
   if(hash.startsWith('#invite=')) {
     try {
       const encoded = hash.slice('#invite='.length);
-      // Reverse of encodeURIComponent-safe btoa
       const json    = decodeURIComponent(
         atob(encoded).split('').map(c=>'%'+c.charCodeAt(0).toString(16).padStart(2,'0')).join('')
       );
-      const wsSnap  = JSON.parse(json);
+      const wsSnap = JSON.parse(json);
       if(wsSnap && wsSnap.id && wsSnap.inviteCode) {
-        // Merge into localStorage (don't overwrite if newer version exists)
-        const existing = db.getWS(wsSnap.id);
-        if(!existing || existing.createdAt <= wsSnap.createdAt) {
-          db.saveOneWS(wsSnap);
+        // Save to Firestore（まだ存在しない場合のみ）
+        const existing = await fsWS(wsSnap.id).get();
+        if(!existing.exists) {
+          await db.saveOneWS(wsSnap);
         }
-        // Clear hash and switch to join view
         history.replaceState(null, '', location.pathname);
         const ses = db.session();
         if(!ses) {
-          // Not logged in — show join screen with code pre-filled
+          renderLanding();
+          showLandingView('join');
           setTimeout(()=>{
-            renderLanding();
-            showLandingView('join');
             const inp = document.getElementById('inv-code');
-            if(inp) { inp.value = wsSnap.inviteCode; inp.dispatchEvent(new Event('input')); }
+            if(inp) inp.value = wsSnap.inviteCode;
           }, 50);
           return;
         }
       }
-    } catch(e) { /* ignore malformed hash */ }
+    } catch(e) { console.warn('invite URL parse error:', e); }
   }
 
+  // ── Restore session ───────────────────────────────────────────
   const ses = db.session();
-  if(ses) {
-    const ws = db.getWS(ses.wsId);
-    if(ws) {
-      state.session = ses;
-      state.ws = ws;
-      state.screen = 'app';
-      // sync wsRole from workspace employee data
-      const me = getEmps().find(e=>e.id===ses.employeeId);
-      if(me) {
-        state.session.role = me.wsRole === 'admin' ? 'admin' : 'employee';
-        db.saveSes(state.session);
+  if(ses && ses.wsId) {
+    // Firestoreから最新のWSデータを取得
+    try {
+      const snap = await fsWS(ses.wsId).get();
+      if(snap.exists) {
+        state.session = ses;
+        state.ws      = snap.data();
+        state.screen  = 'app';
+
+        // wsRoleを同期
+        const me = getEmps().find(e=>e.id===ses.employeeId);
+        if(me) {
+          state.session.role = me.wsRole==='admin' ? 'admin' : 'employee';
+          db.saveSes(state.session);
+        }
+
+        state.activeTab     = isAdmin() ? 'members' : 'mypage';
+        state.selectedEmpId = isAdmin() ? (getEmps()[0]||{}).id : null;
+
+        // リアルタイムリスナーを張る
+        subscribeWorkspace(ses.wsId);
+      } else {
+        // Firestoreに存在しない → セッションクリアしてランディングへ
+        db.clearSes();
       }
-      state.activeTab = isAdmin() ? 'members' : 'mypage';
-      state.selectedEmpId = isAdmin() ? (getEmps()[0]||{}).id : null;
+    } catch(e) {
+      console.error('Failed to load workspace:', e);
+      toast('データの読み込みに失敗しました。通信を確認してください。');
     }
   }
+
   rerender();
 });
 
@@ -614,15 +733,16 @@ function landingContent(view, data) {
 }
 
 function existingWSButtons() {
-  const all = Object.values(db.workspaces());
-  if(!all.length) return '';
+  // Firestoreベースになったので、LocalStorageには過去のwsIdをメモするだけ
+  const recentIds = JSON.parse(localStorage.getItem('sm_recent_ws')||'[]');
+  if(!recentIds.length) return '';
   return `<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e2e8f0">
     <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">過去のグループに再入室</div>
-    ${all.map(ws=>`<button class="route-btn" style="border-color:#e2e8f0;padding:10px 14px" onclick="reenterWS('${ws.id}')">
+    ${recentIds.map(id=>`<button class="route-btn" style="border-color:#e2e8f0;padding:10px 14px" onclick="reenterWS('${id}')">
       <div style="font-size:18px">🏢</div>
       <div>
-        <div style="font-size:13px;font-weight:700;color:#1e293b">${esc(ws.name)}</div>
-        <div style="font-size:11px;color:#94a3b8">${ws.employees.length}名・コード:${ws.inviteCode}</div>
+        <div style="font-size:13px;font-weight:700;color:#1e293b">グループID: ${id.slice(-6)}</div>
+        <div style="font-size:11px;color:#94a3b8">タップして再入室</div>
       </div>
     </button>`).join('')}
   </div>`;
@@ -632,11 +752,11 @@ function showLandingView(v, data) {
   document.getElementById('landing-card').innerHTML = landingContent(v, data);
 }
 
-function doCreate() {
-  const wsName  = document.getElementById('ws-name').value.trim();
+async function doCreate() {
+  const wsName    = document.getElementById('ws-name').value.trim();
   const adminName = document.getElementById('admin-name').value.trim();
   if(!wsName || !adminName) { toast('グループ名と名前を入力してください'); return; }
-  const wsId = 'ws_'+Date.now();
+  const wsId  = 'ws_'+Date.now();
   const empId = nextId++;
   const code  = genCode();
   const ws = {
@@ -644,56 +764,93 @@ function doCreate() {
     employees:[{id:empId, name:adminName, role:'管理者', wsRole:'admin', skills:defaultSkills()}],
     quests:[], approvals:[], createdAt:Date.now(),
   };
-  db.saveOneWS(ws);
-  state.ws = ws;
+  await db.saveOneWS(ws);   // Firestoreに保存
+  state.ws      = ws;
   state.session = {wsId, role:'admin', employeeId:empId};
   db.saveSes(state.session);
+  subscribeWorkspace(wsId); // リアルタイムリスナー開始
   showLandingView('created', {wsName, code, wsId});
 }
 
-function doJoin() {
-  const raw  = (document.getElementById('inv-code').value||'').trim().toUpperCase().replace(/\s/g,'');
-  const name = document.getElementById('join-name').value.trim();
-  const role = document.getElementById('join-role').value.trim() || 'スタッフ';
+async function doJoin() {
+  const raw   = (document.getElementById('inv-code').value||'').trim().toUpperCase().replace(/\s/g,'');
+  const name  = document.getElementById('join-name').value.trim();
+  const role  = document.getElementById('join-role').value.trim() || 'スタッフ';
   const errEl = document.getElementById('join-err');
   errEl.textContent = '';
   if(!raw)  { errEl.textContent='招待コードを入力してください'; return; }
   if(!name) { errEl.textContent='名前を入力してください'; return; }
 
-  // Normalize: remove hyphens for flexible matching
-  const normalize = s => s.toUpperCase().replace(/[-\s]/g,'');
-  const ws = Object.values(db.workspaces()).find(w=>
-    normalize(w.inviteCode) === normalize(raw)
-  );
+  // Firestoreで招待コードを検索
+  errEl.textContent = '🔍 検索中...';
+  try {
+    const normalize = s => s.toUpperCase().replace(/[-\s]/g,'');
+    const snap = await firestore.collection('workspaces')
+      .where('inviteCode', '==', raw)
+      .limit(1)
+      .get();
 
-  if(!ws) {
-    errEl.textContent = `招待コード「${raw}」が見つかりません。管理者から送られた「参加用URL」を使うか、コードを確認してください。`;
-    return;
+    let ws = null;
+    if(!snap.empty) {
+      ws = snap.docs[0].data();
+    } else {
+      // ハイフンなし形式でも試す
+      const snap2 = await firestore.collection('workspaces').get();
+      snap2.forEach(doc => {
+        const d = doc.data();
+        if(normalize(d.inviteCode) === normalize(raw)) ws = d;
+      });
+    }
+
+    if(!ws) {
+      errEl.textContent = `招待コード「${raw}」が見つかりません。管理者から送られた「参加用URL」を使ってください。`;
+      return;
+    }
+
+    const empId  = nextId++;
+    const newEmp = {id:empId, name, role, wsRole:'employee', skills:defaultSkills()};
+    ws.employees = [...(ws.employees||[]), newEmp];
+    await db.saveOneWS(ws);   // Firestoreに保存（全員に反映）
+
+    state.ws      = ws;
+    state.session = {wsId:ws.id, role:'employee', employeeId:empId};
+    db.saveSes(state.session);
+    subscribeWorkspace(ws.id); // リアルタイムリスナー開始
+    enterApp();
+  } catch(e) {
+    console.error('doJoin error:', e);
+    errEl.textContent = '通信エラーが発生しました。インターネット接続を確認してください。';
   }
-  const empId = nextId++;
-  ws.employees.push({id:empId, name, role, wsRole:'employee', skills:defaultSkills()});
-  db.saveOneWS(ws);
-  state.ws = ws;
-  state.session = {wsId:ws.id, role:'employee', employeeId:empId};
-  db.saveSes(state.session);
-  enterApp();
 }
 
-function reenterWS(wsId) {
-  const ws = db.getWS(wsId);
-  if(!ws) return;
-  const adminEmp = ws.employees.find(e=>e.wsRole==='admin') || ws.employees[0];
-  if(!adminEmp) return;
-  state.ws = ws;
-  state.session = {wsId, role:'admin', employeeId:adminEmp.id};
-  db.saveSes(state.session);
-  enterApp();
+async function reenterWS(wsId) {
+  try {
+    const snap = await fsWS(wsId).get();
+    if(!snap.exists) { toast('グループが見つかりません'); return; }
+    const ws       = snap.data();
+    const adminEmp = (ws.employees||[]).find(e=>e.wsRole==='admin') || ws.employees[0];
+    if(!adminEmp) return;
+    state.ws      = ws;
+    state.session = {wsId, role:'admin', employeeId:adminEmp.id};
+    db.saveSes(state.session);
+    subscribeWorkspace(wsId);
+    enterApp();
+  } catch(e) {
+    console.error('reenterWS error:', e);
+    toast('接続に失敗しました');
+  }
 }
 
 function enterApp() {
-  state.screen = 'app';
+  state.screen    = 'app';
   state.activeTab = isAdmin() ? 'members' : 'mypage';
   if(isAdmin()) state.selectedEmpId = (getEmps()[0]||{}).id;
+  // 最近使ったWSをLocalStorageに記録（再入室用）
+  if(state.ws) {
+    const recent = JSON.parse(localStorage.getItem('sm_recent_ws')||'[]');
+    const updated = [state.ws.id, ...recent.filter(id=>id!==state.ws.id)].slice(0,5);
+    localStorage.setItem('sm_recent_ws', JSON.stringify(updated));
+  }
   rerender();
 }
 
@@ -810,16 +967,16 @@ function switchTab(id) {
   renderTabContent();
 }
 
-function renderTabContent() {
+async function renderTabContent() {
   const el = document.getElementById('tab-content');
   if(!el) return;
   const admin = isAdmin();
-  if(state.activeTab==='members' && admin) el.innerHTML = renderMembers();
+  if(state.activeTab==='members' && admin)        el.innerHTML = renderMembers();
   else if(state.activeTab==='approvals' && admin) el.innerHTML = renderApprovals();
-  else if(state.activeTab==='heatmap' && admin) el.innerHTML = renderHeatmap();
-  else if(state.activeTab==='criteria') el.innerHTML = renderCriteria();
-  else if(state.activeTab==='mypage' && !admin) el.innerHTML = renderMyPage();
-  else if(state.activeTab==='quests' && !admin) el.innerHTML = renderQuestsPlayer();
+  else if(state.activeTab==='heatmap' && admin)   el.innerHTML = renderHeatmap();
+  else if(state.activeTab==='criteria')           el.innerHTML = renderCriteria();
+  else if(state.activeTab==='mypage' && !admin)   el.innerHTML = await renderMyPage();
+  else if(state.activeTab==='quests' && !admin)   el.innerHTML = renderQuestsPlayer();
   else el.innerHTML = `<div class="page"><p style="color:#94a3b8">このページは表示できません</p></div>`;
 }
 
@@ -906,13 +1063,13 @@ function renderMemberDetail(emp) {
 // ════════════════════════════════════════════════════════════════
 // MY PAGE
 // ════════════════════════════════════════════════════════════════
-function renderMyPage() {
+async function renderMyPage() {
   const me   = getMe();
   if(!me) return `<div class="page"><p>ログインしていません</p></div>`;
   const rank = getRank(me.skills);
   const tier = parseInt(rank.code.replace('J',''))||1;
   const total= Object.values(me.skills).reduce((a,b)=>a+b,0);
-  const logs = (db.logs()[me.id]||[]).slice(0,10);
+  const logs = await db.getLogs(state.ws.id, me.id);
 
   // Tier description labels
   const tierLabels=['新入社員','ジュニアスタッフ','ミドルスタッフ','シニアスタッフ','エグゼクティブ'];
@@ -1284,7 +1441,7 @@ function changeSkill(empId, skillId, delta) {
   const now   = new Date();
   const ds=`${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}`;
   const ts=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-  db.appendLog(empId, {id:empId+'-'+Date.now(), date:ds, time:ts,
+  db.appendLog(state.ws.id, empId, {id:empId+'-'+Date.now(), date:ds, time:ts,
     skillId, skillLabel:skill.label, newLevel:nv, oldLevel:cur,
     levelName:meta.name, levelIcon:meta.icon, dir:delta>0?'up':'down'});
   renderTabContent();
@@ -1326,7 +1483,7 @@ function approveApv(apvId) {
     const now=new Date();
     const ds=`${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}`;
     const ts=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    db.appendLog(emp.id,{id:emp.id+'-'+Date.now(),date:ds,time:ts,
+    db.appendLog(state.ws.id, emp.id, {id:emp.id+'-'+Date.now(),date:ds,time:ts,
       skillId:apv.skillId,skillLabel:skill.label,newLevel:apv.targetLevel,oldLevel:oldLv,
       levelName:meta.name,levelIcon:meta.icon,dir:'up'});
   }
@@ -1349,14 +1506,17 @@ function rejectApv(apvId) {
 }
 
 function doLogout() {
+  if(_unsubscribeWS) { _unsubscribeWS(); _unsubscribeWS = null; }
   db.clearSes();
   state.session=null; state.ws=null; state.screen='landing';
   rerender();
 }
 
 function doHardReset() {
-  if(!confirm('全データを削除してリセットしますか？')) return;
+  if(!confirm('セッションをリセットしますか？（Firestoreのデータは削除されません）')) return;
+  if(_unsubscribeWS) { _unsubscribeWS(); _unsubscribeWS = null; }
   db.hardReset();
+  localStorage.removeItem('sm_recent_ws');
   state.session=null; state.ws=null; state.screen='landing';
   rerender();
 }
