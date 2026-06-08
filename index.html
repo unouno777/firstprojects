@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>キャリアRPG</title>
-<meta name="theme-color" content="#0a0e1a">
+<meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="キャリアRPG">
@@ -16,36 +16,33 @@
 /* ── Reset & Base ── */
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:        #0a0e1a;
-  --bg2:       #0f1629;
-  --bg3:       #141c35;
-  --surface:   #1a2444;
-  --surface2:  #1e2d50;
-  --border:    rgba(56,189,248,.18);
-  --border2:   rgba(56,189,248,.35);
-  --cyan:      #38bdf8;
-  --cyan2:     #7dd3fc;
-  --gold:      #fbbf24;
-  --gold2:     #fde68a;
-  --purple:    #a78bfa;
-  --green:     #34d399;
-  --red:       #f87171;
-  --text:      #e2e8f0;
-  --text2:     #94a3b8;
-  --text3:     #475569;
+  --bg:        #f1f5f9;
+  --bg2:       #ffffff;
+  --bg3:       #f8fafc;
+  --surface:   #ffffff;
+  --surface2:  #f1f5f9;
+  --border:    rgba(30,58,138,.12);
+  --border2:   rgba(37,99,235,.30);
+  --cyan:      #2563eb;
+  --cyan2:     #1d4ed8;
+  --gold:      #d97706;
+  --gold2:     #b45309;
+  --purple:    #7c3aed;
+  --green:     #059669;
+  --red:       #dc2626;
+  --text:      #0f172a;
+  --text2:     #475569;
+  --text3:     #94a3b8;
   --font-display: 'Rajdhani', 'Noto Sans JP', sans-serif;
   --font-body:    'Noto Sans JP', sans-serif;
-  --glow-cyan: 0 0 16px rgba(56,189,248,.45);
-  --glow-gold: 0 0 16px rgba(251,191,36,.45);
+  --glow-cyan: 0 2px 12px rgba(37,99,235,.18);
+  --glow-gold: 0 2px 12px rgba(217,119,6,.18);
 }
 body{
   font-family:var(--font-body);
   background:var(--bg);
   color:var(--text);
   min-height:100vh;
-  /* scanline texture */
-  background-image:
-    repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.07) 2px,rgba(0,0,0,.07) 4px);
 }
 button{cursor:pointer;border:none;font-family:inherit}
 input,select,textarea{font-family:inherit;outline:none}
@@ -54,7 +51,7 @@ input,select,textarea{font-family:inherit;outline:none}
 /* ── Scrollbar ── */
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-track{background:var(--bg)}
-::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
 
 /* ── Animations ── */
 @keyframes flicker{0%,100%{opacity:1}92%{opacity:.97}95%{opacity:.85}97%{opacity:.97}}
@@ -72,7 +69,7 @@ input,select,textarea{font-family:inherit;outline:none}
   padding:10px 16px 10px;
   display:flex;align-items:center;gap:10px;
   position:sticky;top:0;z-index:200;
-  box-shadow:0 2px 20px rgba(0,0,0,.6);
+  box-shadow:0 2px 12px rgba(15,23,42,.08);
 }
 .header-logo{
   font-family:var(--font-display);
@@ -227,15 +224,15 @@ label{
   display:flex;flex-direction:column;align-items:center;
   justify-content:center;min-height:100vh;padding:24px;
   background:
-    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(56,189,248,.12) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(167,139,250,.1) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(37,99,235,.08) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(124,58,237,.06) 0%, transparent 60%),
     var(--bg);
 }
 .landing-card{
   background:linear-gradient(160deg,var(--surface),var(--bg2));
   border:1px solid var(--border2);border-radius:20px;
   padding:28px;width:100%;max-width:420px;
-  box-shadow:0 20px 60px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.05);
+  box-shadow:0 12px 40px rgba(15,23,42,.12);
 }
 .landing h2{
   font-family:var(--font-display);
@@ -1313,7 +1310,7 @@ function renderApp() {
         <div style="font-size:14px;font-weight:900">${esc(ws.name)}</div>
         <div style="font-size:10px;opacity:.7">${admin?'👑 ギルドマスター':'⚔️ '+esc(me?me.name:'')}</div>
       </div>
-      ${admin ? `<button class="btn-icon" style="margin-left:auto;font-size:12px;width:auto;padding:4px 10px;color:#fff;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3)" onclick="showInvitePopup()">招待</button>` : ''}
+      ${admin ? `<button class="btn-icon" style="margin-left:auto;font-size:12px;width:auto;padding:4px 10px;color:var(--cyan);background:rgba(37,99,235,.08);border-color:var(--border2)" onclick="showInvitePopup()">招待</button>` : ''}
     </div>
     <div class="tabs" id="tab-bar">
       ${tabs.map(t=>`<button class="tab-btn${state.activeTab===t.id?' active':''}" onclick="switchTab('${t.id}')">
